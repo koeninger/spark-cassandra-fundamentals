@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Title</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
+    <style type="text/css">
+      @import url(http://fonts.googleapis.com/css?family=Yanone+Kaffeesatz);
+      @import url(http://fonts.googleapis.com/css?family=Droid+Serif:400,700,400italic);
+      @import url(http://fonts.googleapis.com/css?family=Ubuntu+Mono:400,700,400italic);
+
+      body { font-family: 'Droid Serif'; }
+      h1, h2, h3 {
+        font-family: 'Yanone Kaffeesatz';
+        font-weight: normal;
+      }
+      img {
+        width: 100%;
+        height: auto;
+      }
+      img#kixer-logo {
+        width: 130px;
+        height: 54px;
+      }
+      ul, ol {
+        margin: 6px 0 6px 0;  
+      }
+      li {
+        margin: 0 0 12px 0;  
+      }
+      .remark-code, .remark-inline-code { font-family: 'Ubuntu Mono'; }
+    </style>
+  </head>
+  <body>
+    <textarea id="source">
+
+class: center, middle
+## Fundamentals of Spark for Cassandra
+
+cody@koeninger.org
+
+
+---
+
+## What is Apache Spark
+
+- Distributed computing that is fast to write and reasonably fast to run
+- Integrates with most data stores, including Cassandra
+- Batch or microbatch streaming (~250ms batches)
+- Includes libraries for ML, Graph, SQL-like api
+--
+
+- NOT dependent on a Hadoop cluster
+- NOT a replacement for HDFS or other data stores
+- NOT restricted to in-memory data sets
+
+---
+
+## Language choice
+
+- Scala, Java, Python, R
+- Scala api is the best (closures, shell)
+- Learning Scala isn't hard, if you want to understand the implementation you'll need it
+
+--
+
+Put this on your path:
+- [SBT the rebel cut](https://github.com/paulp/sbt-extras)
+
+Read one of these:
+- [Scala for the Impatient](http://horstmann.com/scala/)
+- [Essential Scala](http://underscore.io/books/essential-scala/)
+- [Programming in Scala](http://www.artima.com/pins1ed/)
+
+---
+
+## Install
+
+prereqs are jvm, passwordless ssh
+
+http://spark.apache.org/downloads.html
+
+pre-built matching your hadoop version, or pick one if you don't use hadoop
+
+unpack tarball to same place on each node
+
+---
+
+## Cluster Manager
+
+Just use standalone unless you already have an investment in Yarn or Mesos
+
+edit ./conf/slaves
+
+```bash
+./sbin/start-all.sh
+```
+
+http://localhost:8080/
+
+---
+
+## Hello World
+
+```bash
+./bin/spark-shell --master spark://Codys-MacBook-Pro.local:7077 \
+--packages datastax:spark-cassandra-connector:2.0.1-s_2.11 \
+--conf spark.cassandra.connection.host=localhost
+```
+
+```scala
+sc.textFile("/var/tmp/fake_events.txt").countByValue
+
+sc.textFile("/var/tmp/fake_events.txt").filter(x => x != "").countByValue
+```
+
+---
+## When does code run?
+
+What happens when I do
+
+```scala
+sc.textFile("/var/tmp/somethingthatdoesntexist")
+```
+
+---
+## RDD
+
+```scala
+val rdd = sc.parallelize(1 to 1000)
+
+rdd.partitions
+rdd.dependencies
+rdd.compute
+
+rdd.partitioner
+rdd.preferredLocations
+
+rdd.toDebugString
+```
+
+How do these change for an RDD that is a transformation? A join?
+
+---
+## Narrow vs Wide stages
+
+in UI, click on application -> jobs -> description for a particular job -> DAG visualization
+
+compare hello world with and without filter
+
+in UI, under details for a particular job's completed stages, look at shuffle read and write
+
+---
+## Where does code run
+
+What will this print out?
+
+```scala
+(1 to 10).foreach(x => println(x))
+
+sc.parallelize(1 to 10).foreach(x => println(x))
+```
+
+---
+## Closures
+
+```scala
+val needle = 3
+
+println(needle)
+
+sc.parallelize(1 to 10).filter(x => needle == x).collect
+```
+
+Compare to:
+
+```scala
+var total = 0
+
+sc.parallelize(1 to 10).foreach(x => total += x)
+
+println(total)
+```
+
+---
+## Serialization
+
+```scala
+val sock = new java.net.Socket("localhost", 8080)
+
+sc.parallelize(1 to 10).map(x => sock.getLocalPort()).collect
+```
+
+See .foreachPartition or .mapPartitions
+
+---
+## Sql / Dataframes / Datasets
+
+```scala
+implicit val sqlContext = org.apache.spark.sql.SQLContext.getOrCreate(sc)
+
+val df = sqlContext.read.json("/var/tmp/fake_events.json")
+
+val result = df.groupBy(df("event")).count()
+
+result.show()
+
+result.explain()
+```
+
+---
+## Cassandra RDD interface
+
+```scala
+// enable calling Cassandra methods on Spark classes
+import com.datastax.spark.connector._
+import org.apache.spark.sql.cassandra._
+```
+
+```scala
+val rdd = sc.cassandraTable("killrvideo", "videos_by_tag")
+// this is a full table scan
+rdd.count
+rdd.collect.foreach(println)
+```
+
+---
+## Cassandra RDD efficiency
+
+```scala
+sc.cassandraTable("killrvideo", "videos_by_tag").
+  filter(row => row.getString("tag") == "remake").
+  map(row => row.getString("name")).
+  collect.foreach(println)
+```
+
+```scala
+sc.cassandraTable("killrvideo", "videos_by_tag").
+  select("name").
+  where("tag = 'remake'").
+  collect.foreach(println)
+```
+
+Which runs faster?
+
+In UI, under details for job, what are the differences in input bytes?
+
+---
+## Learn more
+
+- [Official Docs](http://spark.apache.org/docs/latest/index.html)
+
+- [O'Reilly Learning Spark](http://shop.oreilly.com/product/0636920028512.do)
+
+- [Spark Summit videos](https://spark-summit.org/2017/schedule/)
+
+- Implement your own RDD
+
+- [spark-cassandra-connector](https://github.com/datastax/spark-cassandra-connector)
+
+- [Datastax Academy](https://academy.datastax.com/resources/getting-started-apache-spark)
+
+- [Cassandra Dataset Manager for example datasets](https://github.com/rustyrazorblade/cdm)
+
+
+    </textarea>
+    <script src="slides/remark-latest.min.js">
+    </script>
+    <script>
+      var slideshow = remark.create();
+    </script>
+  </body>
+</html>
