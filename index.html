@@ -95,7 +95,7 @@ edit ./conf/slaves
 ./sbin/start-all.sh
 ```
 
-http://localhost:8080/
+Spark UI is at [http://localhost:8080/](http://localhost:8080/)
 
 ---
 
@@ -143,11 +143,11 @@ How do these change for an RDD that is a transformation? A join?
 ---
 ## Narrow vs Wide stages
 
-in UI, click on application -> jobs -> description for a particular job -> DAG visualization
+in Spark UI, click on application -> jobs -> description for a particular job -> DAG visualization
 
 compare hello world with and without filter
 
-in UI, under details for a particular job's completed stages, look at shuffle read and write
+under details for a particular job's completed stages, look at shuffle read and write
 
 ---
 ## Where does code run
@@ -196,15 +196,38 @@ See .foreachPartition or .mapPartitions
 ## Sql / Dataframes / Datasets
 
 ```scala
-implicit val sqlContext = org.apache.spark.sql.SQLContext.getOrCreate(sc)
+val df = spark.read.json("/var/tmp/fake_events.json")
 
-val df = sqlContext.read.json("/var/tmp/fake_events.json")
+df.printSchema()
 
 val result = df.groupBy(df("event")).count()
 
 result.show()
 
 result.explain()
+```
+
+---
+## Tracing Cassandra queries for understanding
+
+```bash
+# Using java logging
+
+cd spark-directory/conf
+cp log4j.properties.template log4j.properties
+echo 'log4j.logger.com.datastax.spark.connector=DEBUG' >> log4j.properties
+```
+
+```bash
+# Using cassandra, !! Don't do this on a production cluster !!
+nodetool settraceprobability 1.0
+
+cqlsh -e 'truncate system_traces.events;'
+
+# run a Spark command, then
+
+cqlsh -e 'paging off; select activity from system_traces.events limit 10000;' \
+ | grep -v "system"
 ```
 
 ---
@@ -242,8 +265,26 @@ sc.cassandraTable("killrvideo", "videos_by_tag").
 
 Which runs faster?
 
-In UI, under details for job, what are the differences in input bytes?
+In Spark UI, under details for job, what are the differences in input bytes?
 
+---
+## Cassandra Dataset interface
+
+```scala
+val df = spark.read.format("org.apache.spark.sql.cassandra").
+  options(Map("keyspace" -> "killrvideo", "table" -> "videos_by_tag")).
+  load()
+
+df.printSchema()
+
+val query = df.filter("tag = 'remake'").
+  select("name")
+
+query.explain()
+
+query.show()
+
+```
 ---
 ## Learn more
 
